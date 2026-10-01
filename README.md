@@ -2,7 +2,7 @@
 
 Correr dos o más suscripciones de Claude Code en la misma computadora, **sin deslogear ni relogear**, y sin que una cuenta vea los MCP, el historial ni las decisiones de confianza de la otra.
 
-Acá está el método, el procedimiento de alta, un panel HTML que audita el montaje, y lo que descubrí probando las alternativas. Todo verificado en una máquina real, no deducido de la documentación.
+Acá está el método, el procedimiento de alta, un panel HTML que audita el montaje, y lo que descubrí probando las alternativas.
 
 **La postura por defecto es aislar:** nada se comparte entre perfiles —ni skills, ni MCP, ni hooks— salvo que lo pidas explícitamente, caso por caso. Entre dos perfiles que divergen y dos perfiles acoplados, este repo elige que divergan, y te da la herramienta para enterarte cuándo pasa.
 
