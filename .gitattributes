@@ -1,0 +1,7 @@
+# Normalización de fin de línea.
+# Los scripts sh DEBEN conservar LF: con CRLF, el shebang y los `\r` finales
+# rompen la ejecución. Los .cmd de Windows van con CRLF.
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.cmd text eol=crlf
