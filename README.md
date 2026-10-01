@@ -2,7 +2,7 @@
 
 Correr dos o más suscripciones de Claude Code en la misma computadora, **sin deslogear ni relogear**, y sin que una cuenta vea los MCP, el historial ni las decisiones de confianza de la otra.
 
-Acá está el método, el procedimiento de alta, un panel HTML que audita el montaje, y lo que descubrí probando las alternativas.
+Acá está el método, el procedimiento de alta y lo que descubrí probando las alternativas.
 
 **La postura por defecto es aislar:** nada se comparte entre perfiles —ni skills, ni MCP, ni hooks— salvo que lo pidas explícitamente, caso por caso. Entre dos perfiles que divergen y dos perfiles acoplados, este repo elige que divergan, y te da la herramienta para enterarte cuándo pasa.
 
@@ -21,13 +21,12 @@ Tres comandos, tres carpetas, una sola instalación de Claude Code. Corren en pa
 1. [El mecanismo](#1-el-mecanismo)
 2. [Alta de un perfil](#2-alta-de-un-perfil)
 3. [Uso diario](#3-uso-diario)
-4. [El panel de auditoría](#4-el-panel-de-auditoría)
-5. [Qué se aísla y qué no](#5-qué-se-aísla-y-qué-no)
-6. [Seguridad: la frontera es de configuración, no de sandbox](#6-seguridad-la-frontera-es-de-configuración-no-de-sandbox)
-7. [Uso con un multiplexor (Herdr)](#7-uso-con-un-multiplexor-herdr)
-8. [Alternativas que probé y descarté](#8-alternativas-que-probé-y-descarté)
-9. [Handoff entre cuentas](#9-handoff-entre-cuentas)
-10. [Las tres trampas](#10-las-tres-trampas)
+4. [Qué se aísla y qué no](#4-qué-se-aísla-y-qué-no)
+5. [Seguridad: la frontera es de configuración, no de sandbox](#5-seguridad-la-frontera-es-de-configuración-no-de-sandbox)
+6. [Uso con un multiplexor (Herdr)](#6-uso-con-un-multiplexor-herdr)
+7. [Alternativas que probé y descarté](#7-alternativas-que-probé-y-descarté)
+8. [Handoff entre cuentas](#8-handoff-entre-cuentas)
+9. [Las tres trampas](#9-las-tres-trampas)
 
 ---
 
@@ -103,7 +102,7 @@ Un perfil nuevo arranca **sin skills**. Si alguna hace falta en esa cuenta, se i
 ./alta-perfil.sh trabajo --skills mi-skill,otra-skill
 ```
 
-La copia queda congelada, y eso es deliberado: **la deriva es el precio de no estar acoplado**. El panel de la sección 4 la detecta comparando contra el origen, sin que haya ningún enlace de por medio.
+La copia queda congelada, y eso es deliberado: **la deriva es el precio de no estar acoplado**. Si querés enterarte cuándo divergió, comparás contra el origen (`diff -r`, o un hash) sin que haya ningún enlace de por medio.
 
 Si en algún caso puntual preferís el **enlace vivo** —una skill que querés mantener en un solo lugar y que todos los perfiles vean actualizada— es una decisión explícita:
 
@@ -111,7 +110,7 @@ Si en algún caso puntual preferís el **enlace vivo** —una skill que querés 
 .\alta-perfil.ps1 trabajo -Skills mi-skill -Enlazar
 ```
 
-El panel la va a marcar como *compartida con otro perfil*. Eso está bien: la marca para que sea una decisión visible y no un accidente.
+Que sea una decisión explícita es el punto: compartir está bien cuando lo elegiste, no cuando se te pasó.
 
 ### Las dos políticas
 
@@ -119,10 +118,9 @@ El panel la va a marcar como *compartida con otro perfil*. Eso está bien: la ma
 |---|---|---|
 | Skills | copia propia por perfil | un origen común, enlazado |
 | Qué cuesta | derivan; hay que enterarse | un perfil depende de otro |
-| Qué marca el panel | que dos perfiles apunten al mismo origen | una copia congelada |
-| Flag del panel | `--politica aislado` | `--politica compartido` |
+| Qué revisar | que dos perfiles no apunten al mismo origen | que ninguna copia haya quedado congelada |
 
-Elegí una y que el panel la vigile. Las dos son defendibles; mezclarlas sin saberlo no.
+Elegí una y revisala cada tanto. Las dos son defendibles; mezclarlas sin saberlo no.
 
 > ⚠️ **Dos trampas de Windows.** `cp -r` y `Copy-Item -Recurse` **siguen** los enlaces: si copiás una carpeta que contiene junctions, te quedan copias reales sin querer. Y no corras `mklink /J` desde Git Bash — MSYS reescribe el `/J` como si fuera una ruta y el comando falla de forma confusa. PowerShell no tiene ese problema.
 
@@ -163,47 +161,7 @@ No hay que "cambiar" nada: son comandos distintos. Se pueden correr **en paralel
 
 Ante cualquier duda de en cuál estás, adentro de Claude: **`/status`** muestra el mail de la cuenta. Es el juez para todo este asunto.
 
----
-
-## 4. El panel de auditoría
-
-Un montaje de varios perfiles **deriva en silencio**: una skill que quedó copiada, un hook que apunta al perfil de al lado, un perfil sin login. Nada de eso avisa.
-
-[`panel-cuentas.py`](panel-cuentas.py) recorre los perfiles y escribe un HTML autocontenido con lo que encuentra. **Solo lee**: no usa internet, no pide claves, no cambia nada. Python 3.10+, sin dependencias.
-
-```bash
-python panel-cuentas.py                  # el HTML en la carpeta actual
-python panel-cuentas.py --anonimo        # tapa mails y nombre de usuario (para compartir)
-python panel-cuentas.py --json           # además, el JSON crudo
-python panel-cuentas.py --salida x.html  # otra ruta de salida
-```
-
-Hay un [ejemplo de salida](ejemplos/) generado con `--anonimo`.
-
-Cuatro secciones:
-
-- **Perfiles** — una tarjeta por cuenta: mail, plan, MCP de usuario, sesiones e historial, hooks, hash del `settings.json`, modo de permisos, estado de la conexión web de GitHub, si se usó Remote Control.
-- **Skills: enlace o copia** — una matriz skill × perfil. Es la que delata la deriva.
-- **Qué se aísla y qué no** — la tabla de la sección 5, con los datos vivos del repo donde lo corrés.
-- **Diagnóstico** — reglas deterministas sobre todo lo anterior, por severidad.
-
-Las reglas del diagnóstico:
-
-| Severidad | Regla | Política |
-|---|---|---|
-| alta | Perfil sin login · falta el launcher | ambas |
-| media | **Dos perfiles enlazados al mismo origen** | aislado |
-| media | Skills copiadas · skills que el perfil de referencia sí tiene | compartido |
-| media | Varios comandos de hook apuntando a otro perfil | ambas |
-| baja | Un solo comando de hook apuntando a otro perfil | ambas |
-| baja | Integración del multiplexor no instalada · permisos en `auto` · Remote Control usado | ambas |
-| baja | Skills en el origen sin enlazar en ningún perfil | compartido |
-
-La regla de la política `aislado` compara los **destinos** de los enlaces entre perfiles, así que un perfil solo que enlaza su propio origen no dispara nada: lo que marca es que *dos* perfiles compartan.
-
----
-
-## 5. Qué se aísla y qué no
+## 4. Qué se aísla y qué no
 
 El modelo son **dos ejes independientes**: el comando trae la cuenta; la carpeta donde estás trae la configuración de proyecto.
 
@@ -253,7 +211,7 @@ Trabajar un repo con la cuenta de trabajo y commitear sigue firmando con tu iden
 
 ---
 
-## 6. Seguridad: la frontera es de configuración, no de sandbox
+## 5. Seguridad: la frontera es de configuración, no de sandbox
 
 Que una cuenta "no vea los MCP de la otra" significa que no tiene esas herramientas cargadas ni sus credenciales. **No significa que esté enjaulada.** Es el mismo sistema operativo, el mismo usuario, el mismo disco: la sesión de la cuenta B puede leer cualquier archivo, incluido el estado del perfil A.
 
@@ -261,9 +219,9 @@ Para el objetivo habitual —que la cuenta de trabajo no opere con tus herramien
 
 Tres cosas concretas:
 
-**1. Desde la web, la otra cuenta no llega a tu máquina.** Las sesiones en la nube operan sobre repos de GitHub, y solo si esa cuenta tiene la conexión de GitHub autorizada. El panel reporta ese estado por perfil (`connected` / `not_connected`), que es el dato que querés mirar.
+**1. Desde la web, la otra cuenta no llega a tu máquina.** Las sesiones en la nube operan sobre repos de GitHub, y solo si esa cuenta tiene la conexión de GitHub autorizada. El estado está en el `.claude.json` del perfil, en `githubWebConnectionStatusCache.status` (`connected` / `not_connected`): ese es el dato que querés mirar.
 
-**2. Remote Control es el switch que da vuelta lo anterior.** Es el mecanismo por el que una sesión web o móvil maneja una terminal local. Si lo activás en un perfil de trabajo, quien tenga esa contraseña puede manejar esa sesión local — con tu disco y tus credenciales de git. Decidilo explícitamente en vez de dejarlo como omisión. El panel marca los perfiles donde se usó.
+**2. Remote Control es el switch que da vuelta lo anterior.** Es el mecanismo por el que una sesión web o móvil maneja una terminal local. Si lo activás en un perfil de trabajo, quien tenga esa contraseña puede manejar esa sesión local — con tu disco y tus credenciales de git. Decidilo explícitamente en vez de dejarlo como omisión. En el `.claude.json` del perfil, `hasUsedRemoteControl` dice si ya se usó ahí.
 
 **3. Las credenciales de git son de la máquina, no del perfil.** Cualquier proceso corriendo como tu usuario —incluida la sesión de la otra cuenta— puede `git push`. Eso no viene de la web: viene de la sesión local. Si te importa, va una regla `deny` en el `.claude/settings.json` **del repo** (que al ser de proyecto aplica a todas las cuentas por igual) para que el push quede del lado humano.
 
@@ -271,7 +229,7 @@ Tres cosas concretas:
 
 ---
 
-## 7. Uso con un multiplexor (Herdr)
+## 6. Uso con un multiplexor (Herdr)
 
 [Herdr](https://herdr.dev) es un multiplexor de terminales que entiende el ciclo de vida de los agentes (detecta `idle` / `working` / `blocked`). Todo lo de abajo vale para cualquier multiplexor con `--env` por panel; lo verifiqué en Herdr.
 
@@ -336,7 +294,7 @@ CLAUDE_CONFIG_DIR="$HOME/.claude-trabajo" herdr integration install claude
 
 ---
 
-## 8. Alternativas que probé y descarté
+## 7. Alternativas que probé y descarté
 
 ### Cuentas gestionadas del IDE — funcionan, pero no aíslan
 
@@ -381,11 +339,11 @@ Tres propiedades que vale la pena robar:
 2. **La activación es por destino**, con un booleano, no con una carpeta compartida.
 3. **Se materializa por copia, no por enlace** — y `content_hash` permite detectar que la copia derivó **sin que exista acoplamiento en tiempo de ejecución**. Nadie depende de nadie.
 
-Eso es exactamente la política `aislado` de este repo: copias propias, y una herramienta que te avisa cuando divergen. Lo que **no** conviene imitar es cómo escribe: para Claude hace reemplazo total del `settings.json`, sin merge.
+Eso es exactamente la postura por defecto de este repo: copias propias, y una herramienta que te avisa cuando divergen. Lo que **no** conviene imitar es cómo escribe: para Claude hace reemplazo total del `settings.json`, sin merge.
 
 ---
 
-## 9. Handoff entre cuentas
+## 8. Handoff entre cuentas
 
 El historial es por perfil: **no hay `--continue` ni `--resume`** de una sesión de una cuenta desde el perfil de la otra.
 
@@ -402,13 +360,13 @@ Alternativa para arrastrar el contexto literal: copiar el `.jsonl` de la sesión
 
 ---
 
-## 10. Las tres trampas
+## 9. Las tres trampas
 
-1. **Compartir sin haberlo decidido.** Un `New-Item -ItemType Junction` de más, o un `cp -r` que siguió un enlace, y dos cuentas quedan atadas (o dos copias quedan congeladas) sin que nadie lo haya resuelto. Elegí la política y dejá que el panel la vigile.
+1. **Compartir sin haberlo decidido.** Un `New-Item -ItemType Junction` de más, o un `cp -r` que siguió un enlace, y dos cuentas quedan atadas (o dos copias quedan congeladas) sin que nadie lo haya resuelto. Elegí la política y revisala cada tanto.
 2. **Los hooks que apuntan al perfil de al lado.** La copia del `settings.json` trae rutas **absolutas**. Mientras el original exista, funciona; el día que lo toques, se rompen varios perfiles a la vez. Es la fuga más silenciosa de las tres, porque no se ve en ninguna lista de skills.
 3. **El panel sin `--env`** (si usás multiplexor). No hay herencia: es la cuenta por defecto, calladamente.
 
-Las tres las detecta `panel-cuentas.py`. Esa es toda la razón por la que existe.
+Las tres se ven mirando el `.claude.json` y el `settings.json` de cada perfil, y el destino de cada enlace en su `skills/`.
 
 ---
 

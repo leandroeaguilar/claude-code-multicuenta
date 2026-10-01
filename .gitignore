@@ -16,13 +16,6 @@ secrets.yml
 # ─── Config local de Claude Code (permisos personales, no se comparte) ───
 .claude/settings.local.json
 
-# ─── Salida del panel ───
-# Es un snapshot de TU máquina: lleva mails, rutas y nombres de perfiles.
-panel-cuentas.html
-panel-cuentas.json
-# El ejemplo sí va: está generado con --anonimo.
-!ejemplos/panel-ejemplo.html
-
 # ─── Python ───
 __pycache__/
 *.py[cod]
