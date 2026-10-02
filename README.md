@@ -4,7 +4,11 @@ Correr dos o más suscripciones de Claude Code en la misma computadora, **sin de
 
 Acá está el método, el procedimiento de alta y lo que descubrí probando las alternativas.
 
-**La postura por defecto es aislar:** nada se comparte entre perfiles —ni skills, ni MCP, ni hooks— salvo que lo pidas explícitamente, caso por caso. Entre dos perfiles que divergen y dos perfiles acoplados, este repo elige que divergan, y te da la herramienta para enterarte cuándo pasa.
+**La postura por defecto es aislar:** nada se comparte entre perfiles —ni skills, ni MCP, ni hooks— salvo que lo pidas explícitamente, caso por caso. Entre dos perfiles que divergen y dos perfiles acoplados, este repo elige que divergan.
+
+![Tres perfiles de Claude Code auditados: cuenta, MCP, historial y si cada skill es enlace o copia](docs/panel-ejemplo.jpg)
+
+<sub>Lo que conviene revisar de un montaje de varias cuentas, reunido en una vista: qué cuenta tiene cada perfil, qué servidores MCP ve, y si sus skills son copias propias o enlaces a un origen compartido. Sale de una herramienta propia que no se distribuye acá — la sección 4 explica qué campo mirar a mano.</sub>
 
 ```
 ┌─ claude            → ~/.claude            cuenta personal
