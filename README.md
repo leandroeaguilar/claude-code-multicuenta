@@ -1,48 +1,124 @@
-# Varias cuentas de Claude Code en la misma máquina
+# claude-code-multicuenta
 
-Correr dos o más suscripciones de Claude Code en la misma computadora, **sin deslogear ni relogear**, y sin que una cuenta vea los MCP, el historial ni las decisiones de confianza de la otra.
+[![licencia](https://img.shields.io/badge/licencia-MIT-green)](LICENSE)
+[![plataformas](https://img.shields.io/badge/plataforma-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#2-alta-de-un-perfil-en-un-minuto)
+[![dependencias](https://img.shields.io/badge/dependencias-ninguna-black)](#1-qué-trae-este-repo-y-requisitos)
 
-Acá está el método, el procedimiento de alta y lo que descubrí probando las alternativas.
+Correr dos o más suscripciones de Claude Code en la misma computadora, **en paralelo y sin deslogear ni relogear**, sin que una cuenta vea los servidores MCP, el historial ni las decisiones de confianza de la otra.
 
-**La postura por defecto es aislar:** nada se comparte entre perfiles —ni skills, ni MCP, ni hooks— salvo que lo pidas explícitamente, caso por caso. Entre dos perfiles que divergen y dos perfiles acoplados, este repo elige que divergan.
-
-![Tres perfiles de Claude Code auditados: cuenta, MCP, historial y si cada skill es enlace o copia](docs/panel-ejemplo.jpg)
-
-<sub>Lo que conviene revisar de un montaje de varias cuentas, reunido en una vista: qué cuenta tiene cada perfil, qué servidores MCP ve, y si sus skills son copias propias o enlaces a un origen compartido. Sale de una herramienta propia que no se distribuye acá — la sección 4 explica qué campo mirar a mano.</sub>
-
-```
+```text
 ┌─ claude            → ~/.claude            cuenta personal
 ├─ claude-trabajo    → ~/.claude-trabajo    cuenta de la empresa
 └─ claude-cliente    → ~/.claude-cliente    cuenta de un cliente
 ```
 
-Tres comandos, tres carpetas, una sola instalación de Claude Code. Corren en paralelo.
+Tres comandos, tres carpetas, una sola instalación de Claude Code:
+
+- **aislamiento real de configuración:** cada perfil tiene su propio login OAuth, su propio `.claude.json` (MCP y proyectos) y su propio historial de sesiones;
+- **cero programas externos:** usa la variable nativa `CLAUDE_CONFIG_DIR` acotada por proceso mediante un launcher de dos líneas;
+- **aislado por defecto:** nada se comparte entre perfiles —ni skills, ni MCP, ni credenciales— salvo que lo pidas explícitamente con un flag.
+
+📄 Por qué se descartaron los selectores de cuenta de IDEs (Orca) y herramientas como `cc-switch`: **[DECISIONES.md](DECISIONES.md)**.
+
+**Índice:** [1. Qué trae y requisitos](#1-qué-trae-este-repo-y-requisitos) · [2. Alta en 1 minuto](#2-alta-de-un-perfil-en-un-minuto) · [3. Uso diario](#3-uso-diario) · [4. Cómo funciona el mecanismo](#4-cómo-funciona-el-mecanismo) · [5. Qué se aísla y qué no](#5-qué-se-aísla-y-qué-no) · [6. Seguridad](#6-seguridad-frontera-de-configuración-no-de-sandbox) · [7. Multiplexor (Herdr) y handoff](#7-uso-con-un-multiplexor-herdr-y-handoff) · [8. Las tres trampas](#8-las-tres-trampas)
 
 ---
 
-## Índice
+![Tres perfiles de Claude Code auditados: cuenta, MCP, historial y si cada skill es enlace o copia](docs/panel-ejemplo.jpg)
 
-1. [El mecanismo](#1-el-mecanismo)
-2. [Alta de un perfil](#2-alta-de-un-perfil)
-3. [Uso diario](#3-uso-diario)
-4. [Qué se aísla y qué no](#4-qué-se-aísla-y-qué-no)
-5. [Seguridad: la frontera es de configuración, no de sandbox](#5-seguridad-la-frontera-es-de-configuración-no-de-sandbox)
-6. [Uso con un multiplexor (Herdr)](#6-uso-con-un-multiplexor-herdr)
-7. [Alternativas que probé y descarté](#7-alternativas-que-probé-y-descarté)
-8. [Handoff entre cuentas](#8-handoff-entre-cuentas)
-9. [Las tres trampas](#9-las-tres-trampas)
+<sub>Vista de auditoría de tres perfiles convivientes: qué cuenta OAuth tiene cada perfil, qué servidores MCP ve y si sus skills son copias propias o enlaces a un origen compartido. La [sección 2](#verificación-en-dos-comandos) y la [sección 5](#5-qué-se-aísla-y-qué-no) muestran cómo verificar cada campo por CLI.</sub>
 
 ---
 
-## 1. El mecanismo
+## 1. Qué trae este repo y requisitos
 
-Claude Code lee toda su configuración de `~/.claude`. La variable de entorno **`CLAUDE_CONFIG_DIR`** reubica esa raíz: settings, credenciales, historial de sesiones, servidores MCP de usuario y plugins.
+```text
+claude-code-multicuenta/
+├── alta-perfil.ps1              script idempotente de alta para Windows (PowerShell)
+├── alta-perfil.sh               script idempotente de alta para macOS y Linux (Bash)
+├── plantillas/
+│   ├── claude-PERFIL.cmd        plantilla de launcher para Windows (~/.local/bin)
+│   └── claude-PERFIL.sh         plantilla de launcher para macOS / Linux (~/.local/bin)
+├── docs/
+│   └── panel-ejemplo.jpg        captura de verificación de perfiles aislados
+└── DECISIONES.md                por qué aislar por copia y análisis de alternativas (IDEs, cc-switch)
+```
 
-Dos valores distintos = **dos instalaciones lógicas independientes** que conviven. El binario es uno solo; lo único que cambia es de qué carpeta lee la sesión.
+**Requisitos:**
+- Tener **Claude Code** instalado y haber iniciado sesión al menos una vez en el perfil principal (`~/.claude`).
+- Tener `~/.local/bin` (Linux/macOS) o `%USERPROFILE%\.local\bin` (Windows) en tu `PATH` (si no está, el script te avisa).
 
-No hace falta ningún programa extra. Un archivo de dos líneas por cuenta alcanza:
+---
 
-**Windows** — `~/.local/bin/claude-trabajo.cmd`
+## 2. Alta de un perfil en un minuto
+
+### 1. Crear el perfil
+
+Pasale el sufijo del perfil (`trabajo`, `cliente`, etc.). El script es **idempotente**: si algo ya existe, no lo pisa.
+
+**Windows (PowerShell):**
+
+```powershell
+.\alta-perfil.ps1 trabajo
+```
+
+**macOS / Linux:**
+
+```bash
+./alta-perfil.sh trabajo
+```
+
+### 2. Iniciar sesión (una sola vez)
+
+```bash
+claude-trabajo
+# Adentro de Claude Code, ejecutá:
+# /login
+```
+
+El login queda guardado dentro de `~/.claude-trabajo` y no toca tu cuenta principal.
+
+### Verificación en dos comandos
+
+**Antes del login**, comprobá que el perfil nuevo nace ciego a los MCP del perfil principal:
+
+```bash
+CLAUDE_CONFIG_DIR="$HOME/.claude-trabajo" claude mcp list
+# → "No MCP servers configured."
+```
+
+*(Si ahí aparece un servidor del perfil personal, la variable no se está aplicando).*
+
+**Después del login**, comprobá que los correos OAuth difieren y que cada uno lee su propio estado (el `.claude.json` del perfil default vive en `~/.claude.json`; el de un perfil con `CLAUDE_CONFIG_DIR` vive **adentro** de su carpeta, en `~/.claude-<perfil>/.claude.json`):
+
+```bash
+python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['oauthAccount']['emailAddress'], list(d.get('mcpServers',{})))" ~/.claude.json
+python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['oauthAccount']['emailAddress'], list(d.get('mcpServers',{})))" ~/.claude-trabajo/.claude.json
+```
+
+---
+
+## 3. Uso diario
+
+| Para trabajar con… | Comando | Carpeta de configuración |
+|---|---|---|
+| Cuenta personal | `claude` | `~/.claude` |
+| Cuenta de trabajo | `claude-trabajo` | `~/.claude-trabajo` |
+| Cuenta de cliente | `claude-cliente` | `~/.claude-cliente` |
+
+No hay que «cambiar» de cuenta ni cerrar ventanas: son comandos independientes. Podés correrlos **en paralelo** en distintas terminales.
+
+Para confirmar en cuál estás en cualquier momento, corré **`/status`** dentro de la sesión: muestra el correo exacto de la cuenta activa.
+
+---
+
+## 4. Cómo funciona el mecanismo
+
+Claude Code lee su configuración de `~/.claude`. La variable de entorno **`CLAUDE_CONFIG_DIR`** reubica esa raíz completa (settings, credenciales OAuth, historial de sesiones, servidores MCP de usuario y plugins).
+
+El binario `claude` es uno solo; un launcher de dos líneas por cuenta acota la variable únicamente a ese proceso sin contaminar la terminal desde donde lo llamás:
+
+**Windows (`~/.local/bin/claude-trabajo.cmd`):**
 
 ```cmd
 @echo off
@@ -51,201 +127,91 @@ set "CLAUDE_CONFIG_DIR=%USERPROFILE%\.claude-trabajo"
 claude %*
 ```
 
-**macOS / Linux** — `~/.local/bin/claude-trabajo`
+**macOS / Linux (`~/.local/bin/claude-trabajo`):**
 
 ```sh
 #!/bin/sh
 CLAUDE_CONFIG_DIR="$HOME/.claude-trabajo" exec claude "$@"
 ```
 
-`setlocal` (y la asignación en línea en sh) acotan la variable a ese proceso: la terminal desde la que invocás no queda contaminada.
+### Qué hace `alta-perfil` paso a paso
 
-Las plantillas están en [`plantillas/`](plantillas/).
+1. **Crea `~/.claude-<nombre>`**.
+2. **Siembra `settings.json`** copiándolo del perfil principal (hooks, modelo, `statusLine`, permisos). **Nunca copia credenciales**: cada perfil hace su propio `/login`.
+3. **Instala skills solo si las pedís** (desde `~/.agents/skills`, configurable con `-OrigenSkills` / `ORIGEN_SKILLS`):
+   ```powershell
+   # Default: sin skills (aislado)
+   .\alta-perfil.ps1 trabajo
 
----
+   # Instalar skills puntuales por COPIA (congeladas, sin acoplar perfiles)
+   .\alta-perfil.ps1 trabajo -Skills mi-skill,otra-skill
+   ./alta-perfil.sh trabajo --skills mi-skill,otra-skill
 
-## 2. Alta de un perfil
+   # Instalar skills por ENLACE VIVO (junction / symlink al origen común)
+   .\alta-perfil.ps1 trabajo -Skills mi-skill -Enlazar
+   ./alta-perfil.sh trabajo --skills mi-skill --enlazar
+   ```
+4. **Crea el launcher** en `~/.local/bin` y corre `claude mcp list` para verificar el aislamiento.
 
-Hay un script por plataforma que hace los cuatro pasos. Toma el nombre del perfil como argumento:
-
-```powershell
-# Windows
-.\alta-perfil.ps1 trabajo
-```
-
-```bash
-# macOS / Linux
-./alta-perfil.sh trabajo
-```
-
-Después, una sola vez:
-
-```bash
-claude-trabajo      # adentro: /login
-```
-
-### Qué hace, paso por paso
-
-**1. Crea la carpeta y siembra los settings.**
-
-```powershell
-Copy-Item "$HOME\.claude\settings.json" "$HOME\.claude-trabajo\settings.json"
-```
-
-Se copia **solo `settings.json`** (hooks, modelo, statusLine, permisos). **Nunca el archivo de credenciales**: cada perfil hace su propio login. Copiarlo anularía el aislamiento y duplicaría un secreto.
-
-**2. Skills: ninguna, salvo que la pidas.**
-
-Un perfil nuevo arranca **sin skills**. Si alguna hace falta en esa cuenta, se instala por **copia**:
-
-```powershell
-.\alta-perfil.ps1 trabajo -Skills mi-skill,otra-skill
-```
-
-```bash
-./alta-perfil.sh trabajo --skills mi-skill,otra-skill
-```
-
-La copia queda congelada, y eso es deliberado: **la deriva es el precio de no estar acoplado**. Si querés enterarte cuándo divergió, comparás contra el origen (`diff -r`, o un hash) sin que haya ningún enlace de por medio.
-
-Si en algún caso puntual preferís el **enlace vivo** —una skill que querés mantener en un solo lugar y que todos los perfiles vean actualizada— es una decisión explícita:
-
-```powershell
-.\alta-perfil.ps1 trabajo -Skills mi-skill -Enlazar
-```
-
-Que sea una decisión explícita es el punto: compartir está bien cuando lo elegiste, no cuando se te pasó.
-
-### Las dos políticas
-
-| | **aislado** (default) | **compartido** |
-|---|---|---|
-| Skills | copia propia por perfil | un origen común, enlazado |
-| Qué cuesta | derivan; hay que enterarse | un perfil depende de otro |
-| Qué revisar | que dos perfiles no apunten al mismo origen | que ninguna copia haya quedado congelada |
-
-Elegí una y revisala cada tanto. Las dos son defendibles; mezclarlas sin saberlo no.
-
-> ⚠️ **Dos trampas de Windows.** `cp -r` y `Copy-Item -Recurse` **siguen** los enlaces: si copiás una carpeta que contiene junctions, te quedan copias reales sin querer. Y no corras `mklink /J` desde Git Bash — MSYS reescribe el `/J` como si fuera una ruta y el comando falla de forma confusa. PowerShell no tiene ese problema.
-
-**3. Crea el launcher** en una carpeta del `PATH`.
-
-**4. Login.** Una vez; queda permanente.
-
-### Verificación
-
-Antes del login, el perfil nuevo ya debe estar ciego a los MCP del principal:
-
-```bash
-CLAUDE_CONFIG_DIR="$HOME/.claude-trabajo" claude mcp list
-# → "No MCP servers configured."
-```
-
-Si ahí aparece un servidor del perfil personal, la variable no se está aplicando y no hay aislamiento.
-
-Después del login, comparar los dos estados. El `.claude.json` del perfil default vive en `~/.claude.json` (fuera de la carpeta); el de un perfil con `CLAUDE_CONFIG_DIR` vive **adentro**, en `<perfil>/.claude.json`:
-
-```bash
-python -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['oauthAccount']['emailAddress'], list(d.get('mcpServers',{})))" ~/.claude.json
-python -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['oauthAccount']['emailAddress'], list(d.get('mcpServers',{})))" ~/.claude-trabajo/.claude.json
-```
-
-Los mails deben diferir y la lista de MCP del perfil nuevo debe estar vacía.
+> ⚠️ **Dos trampas de enlaces en Windows:**
+> - `cp -r` y `Copy-Item -Recurse` **siguen** los enlaces: si copiás a mano una carpeta que contiene junctions, terminás con copias físicas sin darte cuenta.
+> - No corras `mklink /J` desde Git Bash: MSYS reescribe `/J` como si fuera una ruta POSIX y falla. Usá PowerShell (`New-Item -ItemType Junction`) o `alta-perfil.ps1`.
 
 ---
 
-## 3. Uso diario
+## 5. Qué se aísla y qué no
 
-| Para trabajar con… | Comando |
-|---|---|
-| Cuenta personal | `claude` |
-| Cuenta de trabajo | `claude-trabajo` |
-
-No hay que "cambiar" nada: son comandos distintos. Se pueden correr **en paralelo**, en terminales distintas, cada uno con su cuenta y su historial.
-
-Ante cualquier duda de en cuál estás, adentro de Claude: **`/status`** muestra el mail de la cuenta. Es el juez para todo este asunto.
-
-## 4. Qué se aísla y qué no
-
-El modelo son **dos ejes independientes**: el comando trae la cuenta; la carpeta donde estás trae la configuración de proyecto.
+El modelo tiene **dos ejes independientes**: el comando que ejecutás elige la **cuenta**; la carpeta donde estás parado elige la **configuración del proyecto**.
 
 | Capa | Dónde vive | ¿Aislado entre perfiles? |
 |---|---|---|
-| Login / cuenta | archivo de credenciales del perfil | **Sí** |
-| MCP de usuario | `.claude.json` del perfil | **Sí** |
+| Login / cuenta OAuth | credenciales del perfil | **Sí** |
+| MCP de usuario | `.claude.json` del perfil (`mcpServers`) | **Sí** |
+| MCP local por proyecto | `.claude.json` del perfil (`projects[...]`) | **Sí** |
 | Historial de sesiones | `projects/` del perfil | **Sí** |
 | Plugins | `plugins/` del perfil | **Sí** |
-| Conectores de la cuenta | atados a la cuenta | **Sí**, automáticamente |
-| Hooks de usuario | `settings.json` del perfil | **Copiados, no compartidos** ⚠️ |
-| Skills | `skills/` del perfil | **Sí** con la política default (copias propias) |
-| Hooks de proyecto | `.claude/settings.json` del repo | **Compartidos** |
-| Permisos, comandos, agentes | `.claude/` del repo | **Compartidos** |
-| MCP de proyecto | `.mcp.json` del repo | **Compartidos** |
-| Identidad de git | `git config user.email` | **Compartida** |
-| Credenciales de git / GitHub | keyring del sistema | **Compartidas** |
-| Sistema de archivos | el disco | **Nada aislado** |
+| Conectores de la cuenta | atados a la cuenta OAuth | **Sí**, automáticamente |
+| Skills de usuario | `skills/` del perfil | **Sí** con la política default (copias propias) |
+| Hooks de usuario | `settings.json` del perfil | **Copiados al crear, no sincronizados** ⚠️ |
+| Hooks, permisos y agentes del repo | `.claude/` del repositorio | **Compartidos** (son del proyecto) |
+| MCP del repo | `.mcp.json` del repositorio | **Compartidos** (los ve cualquier cuenta que abra ese repo) |
+| Identidad de commit | `git config user.email` | **Compartida** |
+| Credenciales de push (Git/GitHub) | keyring del sistema operativo | **Compartidas** |
+| Sistema de archivos | el disco local | **Nada aislado** (mismo usuario del SO) |
 
-### Los MCP, en sus tres alcances
+### Dos consecuencias importantes
 
-No se comparten por **ningún** camino entre perfiles… salvo uno:
-
-| Alcance | Dónde vive | ¿Lo ve el otro perfil? |
-|---|---|---|
-| Usuario | `mcpServers` del `.claude.json` del perfil | No |
-| Local (por proyecto) | `projects[...]` del `.claude.json` del perfil | No |
-| Proyecto | `.mcp.json` **del repo** | **Sí** |
-
-Si un repo tiene `.mcp.json`, ese servidor lo ven todas las cuentas que trabajen esa carpeta. Es la única vía abierta, y es por diseño: es configuración del proyecto, no de la persona.
-
-### Dos consecuencias que conviene no olvidar
-
-**Los hooks de usuario son copias.** Al crear el perfil se copió el `settings.json`. Si después agregás o cambiás un hook en uno, **el otro no se entera**. Con tres perfiles, cada cambio hay que hacerlo tres veces o quedan divergentes.
-
-Peor: si los hooks del `settings.json` copiado apuntan por **ruta absoluta** a scripts que viven dentro del perfil original, el perfil nuevo depende de él sin que se note. Si alguna vez renombrás o limpiás el original, se rompen los otros. Conviene que los scripts de hooks vivan en una carpeta neutral (`~/.agents/hooks/`, por ejemplo) y que ningún perfil sea el dueño.
-
-**La identidad de git no tiene nada que ver con la cuenta de Claude.** Son ejes distintos:
+1. **Los hooks de usuario en `settings.json` son copias independientes.** Si agregás un hook después en `~/.claude/settings.json`, los demás perfiles no se enteran. Además, evitá que los hooks de tu `settings.json` apunten por ruta absoluta a scripts dentro de `~/.claude/`: si algún día movés el perfil principal, se romperían los demás. Guardá los scripts compartidos en una ruta neutral (por ejemplo `~/.agents/hooks/`).
+2. **La cuenta de Claude no cambia quién firma en Git:**
 
 | Eje | Qué decide | De dónde sale |
 |---|---|---|
 | Cuenta de Claude | **quién paga los tokens** | `CLAUDE_CONFIG_DIR` |
 | Identidad de git | **quién firma el commit** | `git config user.email` |
-| Credencial de push | **con qué token empuja** | keyring del sistema |
-
-Trabajar un repo con la cuenta de trabajo y commitear sigue firmando con tu identidad global de git y empujando con tu token. En el historial del repo, el trabajo de una cuenta es indistinguible del de la otra. Si querés que se note, va un override por repo (`git config --local user.email …`) — pero ojo, eso aplica a *todos* los commits de ese repo, no solo a los de esa cuenta.
+| Credencial de push | **con qué token se hace push** | keyring del sistema |
 
 ---
 
-## 5. Seguridad: la frontera es de configuración, no de sandbox
+## 6. Seguridad: frontera de configuración, no de sandbox
 
-Que una cuenta "no vea los MCP de la otra" significa que no tiene esas herramientas cargadas ni sus credenciales. **No significa que esté enjaulada.** Es el mismo sistema operativo, el mismo usuario, el mismo disco: la sesión de la cuenta B puede leer cualquier archivo, incluido el estado del perfil A.
+Que una cuenta no vea los MCP ni el historial de la otra significa que no carga esas herramientas ni sus tokens en el contexto. **No significa que corra en un contenedor aislado:** ambos perfiles corren bajo tu mismo usuario del sistema operativo y ven el mismo disco.
 
-Para el objetivo habitual —que la cuenta de trabajo no opere con tus herramientas ni con tu historial— alcanza y sobra. Para un modelo de amenaza donde no confiás en quien maneja la otra cuenta, **no**.
+Tres puntos concretos a vigilar:
 
-Tres cosas concretas:
+1. **Desde la web, la otra cuenta no entra a tu máquina.** Las sesiones cloud operan sobre repos de GitHub solo si esa cuenta autorizó la integración. Podés auditarlo en el `.claude.json` del perfil mirando `githubWebConnectionStatusCache.status` (`connected` / `not_connected`).
+2. **Remote Control invierte el punto anterior.** Permite que una sesión web o móvil controle una terminal local. Si lo activás en un perfil compartido o de trabajo, quien tenga acceso a esa cuenta podría operar tu sesión local con tu disco y tus credenciales de git. Auditalo en `.claude.json` mirando `hasUsedRemoteControl`.
+3. **Cualquier perfil local puede hacer `git push` con las credenciales de tu máquina.** Si querés impedir que un agente empuje código sin permiso humano, agregá `"ask": ["Bash(git push *)"]` o `"deny"` en el `.claude/settings.json` **del repositorio** (aplica a todas las cuentas por igual).
 
-**1. Desde la web, la otra cuenta no llega a tu máquina.** Las sesiones en la nube operan sobre repos de GitHub, y solo si esa cuenta tiene la conexión de GitHub autorizada. El estado está en el `.claude.json` del perfil, en `githubWebConnectionStatusCache.status` (`connected` / `not_connected`): ese es el dato que querés mirar.
-
-**2. Remote Control es el switch que da vuelta lo anterior.** Es el mecanismo por el que una sesión web o móvil maneja una terminal local. Si lo activás en un perfil de trabajo, quien tenga esa contraseña puede manejar esa sesión local — con tu disco y tus credenciales de git. Decidilo explícitamente en vez de dejarlo como omisión. En el `.claude.json` del perfil, `hasUsedRemoteControl` dice si ya se usó ahí.
-
-**3. Las credenciales de git son de la máquina, no del perfil.** Cualquier proceso corriendo como tu usuario —incluida la sesión de la otra cuenta— puede `git push`. Eso no viene de la web: viene de la sesión local. Si te importa, va una regla `deny` en el `.claude/settings.json` **del repo** (que al ser de proyecto aplica a todas las cuentas por igual) para que el push quede del lado humano.
-
-**Y nunca copies el archivo de credenciales entre perfiles.** Cada perfil hace su `/login`. `/logout` tampoco es parte de este flujo: desloguear tira justamente lo que este montaje consigue.
+> **Regla de oro:** nunca copies archivos de credenciales entre perfiles y no uses `/logout` para cambiar de cuenta (desloguear invalida el token que el perfil aislado conserva).
 
 ---
 
-## 6. Uso con un multiplexor (Herdr)
+## 7. Uso con un multiplexor (Herdr) y handoff
 
-[Herdr](https://herdr.dev) es un multiplexor de terminales que entiende el ciclo de vida de los agentes (detecta `idle` / `working` / `blocked`). Todo lo de abajo vale para cualquier multiplexor con `--env` por panel; lo verifiqué en Herdr.
+### En [Herdr](https://herdr.dev) (o cualquier multiplexor con `--env` por panel)
 
-### A mano — el 99% de las veces
-
-Abrís un panel y escribís el comando. **Eso es todo.** El multiplexor detecta el agente igual, porque el proceso es el mismo `claude`.
-
-Para distinguirlos en pantalla, nombralos: `herdr agent rename <pane> trabajo`.
-
-### Cuando un agente lanza a otro
-
-`herdr agent start` existe para que un agente le abra un panel a otro agente. Ese comando arranca el binario **pelado** —no conoce tu launcher— así que la cuenta hay que pasarla al crear el panel:
+- **Uso manual (99% de las veces):** abrís un panel, corrés `claude-trabajo` y listo. Para identificarlo en la barra: `herdr agent rename <pane> trabajo`.
+- **Cuando un agente lanza a otro (`herdr agent start`):** como ese subcomando invoca el binario `claude` directo sin pasar por tu launcher, tenés que inyectar `CLAUDE_CONFIG_DIR` al crear el panel:
 
 ```bash
 herdr pane split --current --direction right --cwd "$PWD" \
@@ -253,19 +219,12 @@ herdr pane split --current --direction right --cwd "$PWD" \
 herdr agent start trabajo --kind claude --pane <pane-id-devuelto>
 ```
 
-`--env` existe en `pane split`, `tab create` y `workspace create`. **No** en `worktree create`.
+> ⚠️ **Los paneles no heredan `--env` entre sí.** Un `tab create` o `pane split` nace del servidor del multiplexor, no del shell padre: si no le pasás `--env`, abre en la cuenta por defecto. Podés verificar qué binario corrió mirando `"argv"` en el JSON que devuelve Herdr, e instalar el hook de estado por perfil con:
+> ```bash
+> CLAUDE_CONFIG_DIR="$HOME/.claude-trabajo" herdr integration install claude
+> ```
 
-> ⚠️ **El entorno no se hereda.** Verificado con pruebas separadas:
->
-> | Caso | ¿Tiene la variable? |
-> |---|---|
-> | `workspace create --env` → su panel raíz | sí |
-> | `tab create` dentro de ese workspace | **no** |
-> | `pane split` desde un panel que la tiene | **no** |
->
-> Los paneles nacen del servidor del multiplexor, no del shell padre. **Un panel que no se creó con `--env` es la cuenta por defecto**, aunque esté al lado de uno de la otra cuenta y en la misma carpeta.
-
-Atajo para `config.toml`, que evita el paso donde te olvidás:
+Atajo recomendado en `config.toml` de Herdr para abrir un panel de trabajo con una tecla:
 
 ```toml
 [[keys.command]]
@@ -274,106 +233,22 @@ type = "shell"
 command = "herdr pane split --direction right --env CLAUDE_CONFIG_DIR=/ruta/a/.claude-trabajo"
 ```
 
-Funciona sin `--pane` ni `--cwd`: sin target usa el panel enfocado, y sin `--cwd` el panel nuevo hereda el cwd de ese panel.
+### Handoff entre cuentas sobre un mismo repo
 
-### Cómo verificarlo sin creerle a nadie
-
-La CLI de Herdr responde en JSON y casi siempre hay un campo que nombra lo que pasó de verdad:
-
-```json
-{"result":{"agent":{"agent":"claude","name":"trabajo"},"argv":["claude"],"type":"agent_started"}}
-```
-
-`argv` es el comando exacto que ejecutó. Dice `claude`, no tu launcher — ahí está la prueba, sin deducir nada.
-
-### La integración de estado se instala por perfil
-
-El multiplexor instala un hook para saber si el agente está trabajando o bloqueado, y lo instala **en una raíz de configuración**. Si copiaste el `settings.json`, el perfil nuevo tiene el hook pero apuntando al script del original: funciona, y es exactamente la dependencia invisible de la sección 5.
-
-Se desacopla instalándolo de verdad en el perfil, que respeta la variable:
-
-```bash
-CLAUDE_CONFIG_DIR="$HOME/.claude-trabajo" herdr integration install claude
-```
+Como el historial de chat (`projects/`) está aislado por perfil, `--continue` y `--resume` no cruzan de una cuenta a otra. Para mantener continuidad al cambiar de cuenta en la misma carpeta, usá una bitácora en el repositorio (`docs/BITACORA.md`) respaldada por hooks de proyecto (`Stop` y `SessionStart`). Ver el detalle en **[DECISIONES.md §3](DECISIONES.md#3-continuidad-y-handoff-entre-cuentas)**.
 
 ---
 
-## 7. Alternativas que probé y descarté
+## 8. Las tres trampas
 
-### Cuentas gestionadas del IDE — funcionan, pero no aíslan
+Si algo parece mezclado entre perfiles, revisá estas tres causas:
 
-Algunos entornos (Orca, por ejemplo) traen un selector de cuentas de proveedor. **Funciona y es reversible**, pero el mecanismo es **intercambio de identidad, no aislamiento**: al activar una cuenta gestionada, se **reescriben las credenciales dentro de `~/.claude`**.
-
-Lo que medí:
-
-- Al activar la segunda cuenta, el estado del perfil personal pasó a ese mail **conservando todos los servidores MCP y la lista entera de proyectos**. La cuenta nueva quedaba con acceso a todo lo personal.
-- El efecto es **de toda la máquina**, no solo del IDE: cualquier `claude` en cualquier terminal pasaba a la otra cuenta.
-- Alcanza a **sesiones ya abiertas**, en ambas direcciones, sin reiniciar.
-- Al eliminar la cuenta gestionada, el login original **se restauró solo**, intacto.
-- **Deja residuo**: el intercambio escribió varios MB de skills sincronizadas de la segunda cuenta dentro de la carpeta del perfil personal. Está separado por identificador de cuenta, así que es inocuo, pero es la prueba física de que el swap escribe en tu carpeta. El perfil aislado no deja nada.
-
-**Cuándo sí conviene:** para estirar créditos — seguir el mismo trabajo, con los mismos MCP, facturando a otra cuenta. Ahí compartir el entorno es deseable, y además conserva las sesiones de chat al cambiar, que es lo único que el perfil aislado no da.
-
-**Por qué no lo adopté:** el objetivo era que la cuenta de trabajo no toque nada personal.
-
-### cc-switch — no puede hacerlo para Claude Code
-
-[cc-switch](https://github.com/farion1231/cc-switch) gestiona proveedores de API, no cuentas OAuth de Claude Code. Su propio FAQ lo dice: *"After switching to it, run the Log out / Log in flow"*, y nombra el cambio entre varias cuentas oficiales **solo para Codex**.
-
-Leyendo el código: no hay ninguna referencia al archivo de credenciales de Claude Code, y su escritura para Claude es **reemplazo total** del `settings.json` con la config del proveedor, sin merge. Sirve si tu segunda cuenta es una **API key** de la consola (`ANTHROPIC_API_KEY` anula la suscripción mientras está activa), no si es otra suscripción.
-
-> ⚠️ Tras instalarlo, su proveedor `default` de Claude queda en `{}` con *Apply Common Config* destildado. Un clic en esa pestaña deja tu `settings.json` global en dos caracteres. Se desarma tildando *Apply Common Config* en cada proveedor, o no abriendo esa pestaña.
-
-También guarda tokens OAuth (`access_token`, `refresh_token`, `id_token`) en un SQLite **sin cifrar**. Si lo usás, es superficie nueva a inventariar.
-
-### Lo que cc-switch sí resuelve bien: cómo compartir
-
-No sirve para cambiar de cuenta, pero su modelo de datos es la mejor respuesta que vi al problema de compartir configuración entre destinos. Leyendo su SQLite:
-
-| Tabla | Forma |
-|---|---|
-| `mcp_servers` | `id`, `server_config`, y un booleano **por destino**: `enabled_claude`, `enabled_codex`, `enabled_gemini`… |
-| `skills` | `id`, coordenadas del repo (`repo_owner`, `repo_name`, `repo_branch`, `directory`), el mismo booleano por destino, más `content_hash` e `installed_at` |
-| `settings` | una fila `common_config_<app>` con la configuración base compartida |
-| `providers` | `meta.commonConfigEnabled` decide **por proveedor** si esa base se aplica |
-
-Tres propiedades que vale la pena robar:
-
-1. **El catálogo está separado de lo activado.** Una skill o un servidor MCP se declara **una vez**, y no está en ningún destino hasta que se tilda. El default es apagado.
-2. **La activación es por destino**, con un booleano, no con una carpeta compartida.
-3. **Se materializa por copia, no por enlace** — y `content_hash` permite detectar que la copia derivó **sin que exista acoplamiento en tiempo de ejecución**. Nadie depende de nadie.
-
-Eso es exactamente la postura por defecto de este repo: copias propias, y una herramienta que te avisa cuando divergen. Lo que **no** conviene imitar es cómo escribe: para Claude hace reemplazo total del `settings.json`, sin merge.
-
----
-
-## 8. Handoff entre cuentas
-
-El historial es por perfil: **no hay `--continue` ni `--resume`** de una sesión de una cuenta desde el perfil de la otra.
-
-Lo vi en vivo: una sesión de la segunda cuenta arrancó diciendo "no hay memoria de sesiones anteriores" y reconstruyó el estado leyendo el repo (`git log`, el archivo de estado del proyecto, la lista de tareas). La memoria **existía** — en el otro perfil, del mismo día — pero esa cuenta no podía leerla.
-
-Como fallback, reconstruir desde el repo funciona bien. Y se puede hacer mucho mejor con **hooks de proyecto**, que por ser de proyecto corren igual en todos los perfiles:
-
-- un hook `Stop` que escriba un handoff al final de un archivo de bitácora,
-- un hook `SessionStart` que lo inyecte al arrancar.
-
-Cambiar de cuenta en la misma carpeta preserva la continuidad. Un repo sin `.claude/` no tiene nada de esto.
-
-Alternativa para arrastrar el contexto literal: copiar el `.jsonl` de la sesión entre perfiles. La convención de carpetas es idéntica (`projects/<cwd-saneado>/`). **No lo verifiqué.**
-
----
-
-## 9. Las tres trampas
-
-1. **Compartir sin haberlo decidido.** Un `New-Item -ItemType Junction` de más, o un `cp -r` que siguió un enlace, y dos cuentas quedan atadas (o dos copias quedan congeladas) sin que nadie lo haya resuelto. Elegí la política y revisala cada tanto.
-2. **Los hooks que apuntan al perfil de al lado.** La copia del `settings.json` trae rutas **absolutas**. Mientras el original exista, funciona; el día que lo toques, se rompen varios perfiles a la vez. Es la fuga más silenciosa de las tres, porque no se ve en ninguna lista de skills.
-3. **El panel sin `--env`** (si usás multiplexor). No hay herencia: es la cuenta por defecto, calladamente.
-
-Las tres se ven mirando el `.claude.json` y el `settings.json` de cada perfil, y el destino de cada enlace en su `skills/`.
+1. **Compartir skills sin haberlo decidido:** un junction de más o un `cp -r` que siguió un enlace deja dos perfiles atados (o congelados) sin aviso. Revisá los enlaces dentro de `~/.claude-<perfil>/skills/`.
+2. **Hooks con rutas absolutas al perfil principal:** el `settings.json` sembrado al inicio copia las rutas tal cual. Si apuntan a `~/.claude/...`, el perfil nuevo depende en silencio del original.
+3. **Panel de multiplexor creado sin `--env`:** abre calladamente en la cuenta personal aunque esté al lado de un panel de trabajo. Cuando dudes, corré `/status`.
 
 ---
 
 ## Licencia
 
-MIT. Ver [LICENSE](LICENSE).
+[MIT](LICENSE) © 2026 Leandro Aguilar.
